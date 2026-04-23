@@ -9,7 +9,7 @@ from scipy import stats
 from scipy.optimize import curve_fit
 
 st.set_page_config(layout="wide")
-st.title("Interactive Regression Analysis")
+st.title("HUMA - Interactive Regression Analysis for plant exp")
 st.caption(
     "Fit linear or polynomial models to group means or raw replicates, while plotting mean ± error and an overlaid regression curve."
 )
