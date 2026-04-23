@@ -1,4 +1,4 @@
-# Interactive Regression Analysis - v5
+# Interactive Regression Analysis - v6
 
 This Streamlit app fits linear or polynomial regressions to either:
 - **Group means**
