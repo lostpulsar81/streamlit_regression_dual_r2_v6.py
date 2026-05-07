@@ -262,6 +262,71 @@ def interpret_fit_quality(p_value, r2_fit_basis, fit_basis_label):
     return headline, detail, p_explanation, r2_explanation
 
 
+def assess_xopt_confidence(p_value, r2_raw, threshold=0.20):
+    if not np.isfinite(p_value) or not np.isfinite(r2_raw):
+        return (
+            "X opt: confidence unavailable",
+            "Confidence in X opt could not be assessed because p-value or R² (raw) is unavailable.",
+            False,
+        )
+
+    if p_value >= 0.05 or r2_raw < threshold:
+        return (
+            "X opt: low-confidence estimate",
+            (
+                f"X opt is shown as a low-confidence estimate because p-value is {'≥' if p_value >= 0.05 else '<'} 0.05 "
+                f"and/or R² (raw) is {'<' if r2_raw < threshold else '≥'} {threshold:.2f}. "
+                "In this situation, replicate variability is high relative to the fitted trend, so the fitted maximum should be treated as exploratory, "
+                "and the best observed concentration should carry more weight in interpretation."
+            ),
+            True,
+        )
+
+    return (
+        "X opt: supported estimate",
+        (
+            f"X opt is shown as a supported estimate because p-value < 0.05 and R² (raw) ≥ {threshold:.2f}. "
+            "The fitted maximum is reasonably supported by the current dataset, although it should still be interpreted together "
+            "with the observed means and formal group comparisons."
+        ),
+        False,
+    )
+
+
+def assess_internal_optimum(max_concentration, concentrations, p_value, r2_raw, threshold=0.20):
+    concentrations = np.asarray(concentrations, dtype=float)
+    x_min = float(np.min(concentrations))
+    x_max = float(np.max(concentrations))
+    x_span = x_max - x_min
+    tol = max(1e-9, 0.01 * x_span)
+    boundary_optimum = abs(max_concentration - x_min) <= tol or abs(max_concentration - x_max) <= tol
+    weak_fit = (not np.isfinite(p_value)) or (not np.isfinite(r2_raw)) or p_value >= 0.05 or r2_raw < threshold
+    no_reliable_internal = boundary_optimum or weak_fit
+
+    if no_reliable_internal:
+        reasons = []
+        if boundary_optimum:
+            reasons.append("the fitted maximum falls at the edge of the tested concentration range rather than at an internal concentration")
+        if p_value >= 0.05 if np.isfinite(p_value) else True:
+            reasons.append("the global model test is not statistically significant")
+        if r2_raw < threshold if np.isfinite(r2_raw) else True:
+            reasons.append("replicate variability is high relative to the fitted trend")
+        if not reasons:
+            reasons.append("the fitted trend does not support a stable internal optimum")
+        reason_text = "; ".join(reasons)
+        return (
+            "No reliable internal optimum detected within tested range",
+            f"No reliable internal optimum detected within the tested range because {reason_text}.",
+            True,
+        )
+
+    return (
+        "Reliable internal optimum detected within tested range",
+        "The fitted maximum lies within the tested range and the regression support is acceptable for interpreting an internal optimum.",
+        False,
+    )
+
+
 excel_file = None
 sheet_name = None
 
@@ -365,7 +430,9 @@ with right_col:
             "- **Error bars shown on mean points** controls only the plotted bars/points.\n"
             "- **Weights for mean fit** controls only the weighting of the regression when fitting means.\n"
             "- Recommended setup for many biological datasets: show **SD** on the graph to represent real variability, and use **SEM** as weights if you fit the group means.\n"
-            "- Downloaded **PNG** files are exported with a transparent background."
+            "- Downloaded **PNG** files are exported with a transparent background.\n"
+            "- X opt is automatically flagged as **low-confidence estimate** when p-value ≥ 0.05 or R² (raw) < 0.20.\n"
+            "- When the fit is weak or the fitted maximum falls at the edge of the tested range, the graph also reports **Best observed concentration** and **No reliable internal optimum detected within tested range**."
         )
         st.write(
             "**R² meanings**\n"
@@ -535,13 +602,29 @@ with right_col:
                     zorder=4,
                 )
 
+            fit_basis_label = "means" if fit_on_means else "raw replicates"
+            fit_headline, fit_detail, fit_p_explanation, fit_r2_explanation = interpret_fit_quality(
+                p_value,
+                r2_fit_basis,
+                fit_basis_label,
+            )
+            xopt_headline, xopt_detail, xopt_low_confidence = assess_xopt_confidence(p_value, r2_raw)
+            optimum_headline, optimum_detail, no_reliable_internal_optimum = assess_internal_optimum(
+                max_concentration,
+                concentrations,
+                p_value,
+                r2_raw,
+            )
+            xopt_legend_prefix = "X opt (low confidence est.)" if xopt_low_confidence else "X opt"
+            best_observed_prefix = "Best observed concentration"
+
             ax.plot(x_plot_fit, y_fit, color=line_color, label=legend_label, linewidth=2, zorder=5)
 
             ax.axvline(
                 x=x_plot_max,
                 linestyle="--",
                 color="orange",
-                label=f"X opt: {max_concentration:.1f} {x_label}",
+                label=f"{xopt_legend_prefix}: {max_concentration:.1f} {x_label}",
                 zorder=4,
             )
             ax.scatter(x_plot_max, max_height, color="orange", zorder=6)
@@ -569,24 +652,49 @@ with right_col:
                 ax,
                 x_plot_max,
                 max_height,
-                f"X opt: {max_concentration:.1f} {x_label}",
+                f"{xopt_legend_prefix}: {max_concentration:.1f} {x_label}",
                 font_size_tick,
                 color="orange",
             )
 
-            fit_basis_label = "means" if fit_on_means else "raw replicates"
-            fit_headline, fit_detail, fit_p_explanation, fit_r2_explanation = interpret_fit_quality(
-                p_value,
-                r2_fit_basis,
-                fit_basis_label,
-            )
+            if no_reliable_internal_optimum:
+                x_plot_best_obs = float(display_mapper(np.array([max_data_concentration], dtype=float))[0])
+                ax.axvline(
+                    x=x_plot_best_obs,
+                    linestyle=":",
+                    color="green",
+                    label=f"{best_observed_prefix}: {max_data_concentration:.1f} {x_label}",
+                    zorder=4,
+                )
+                ax.scatter(x_plot_best_obs, max_data_height, color="green", zorder=6)
+                add_confined_peak_annotation(
+                    ax,
+                    x_plot_best_obs,
+                    max_data_height,
+                    f"{best_observed_prefix}: {max_data_concentration:.1f} {x_label}",
+                    font_size_tick,
+                    color="green",
+                )
+                ax.text(
+                    0.5,
+                    0.90,
+                    "No reliable internal optimum detected within tested range\nHigh variability among replicates relative to the fitted trend",
+                    transform=ax.transAxes,
+                    ha="center",
+                    va="top",
+                    fontsize=max(font_size_stats_box, 9),
+                    bbox=dict(boxstyle="round,pad=0.3", facecolor="white", edgecolor="crimson", alpha=0.92),
+                    color="crimson",
+                    zorder=7,
+                )
+
             stats_text = (
                 f"Fit basis: {fit_basis_label} ({weighting_description})\n"
                 f"R² (fit basis): {r2_fit_basis:.4f}\n"
                 f"R² (means): {r2_means:.4f}\n"
                 f"R² (raw): {r2_raw:.4f}\n"
                 f"p-value: {p_value:.4g}\n"
-                f"X opt: {max_concentration:.2f} {x_label}\n"
+                f"{xopt_legend_prefix}: {max_concentration:.2f} {x_label}\n"
                 f"{equation}"
             )
             ax.text(
@@ -649,20 +757,22 @@ with right_col:
                     st.write(f"**R² (raw):** {r2_raw:.6f}")
                     st.write(f"**p-value:** {p_value:.6g}")
                     st.write(f"**F statistic:** {f_stat:.6g}" if np.isfinite(f_stat) else "**F statistic:** not available")
-                    st.write(f"**X opt:** {max_concentration:.3f} {x_label}")
-                    st.write(f"**Max data:** {max_data_concentration:.3f} {x_label}")
+                    st.write(f"**{xopt_headline}:** {max_concentration:.3f} {x_label}")
+                    st.write(f"**Best observed concentration:** {max_data_concentration:.3f} {x_label}")
                     st.write(f"**Download name:** {output_stem}.{save_format}")
                     st.markdown("**Automatic interpretation**")
                     st.write(f"**Summary:** {fit_headline}")
                     st.write(fit_detail)
                     st.write(f"**How to read p-value:** {fit_p_explanation}")
                     st.write(f"**How to read R²:** {fit_r2_explanation}")
+                    st.write(f"**How to read X opt:** {xopt_detail}")
+                    st.write(f"**Internal optimum check:** {optimum_detail}")
 
             with res_col2:
                 with st.container(border=True):
                     st.markdown("**Definitions**")
-                    st.write("- **X opt** = concentration of the maximum predicted by the fitted regression curve within the tested X range.")
-                    st.write("- **Max data** = highest observed group mean among the tested concentrations.")
+                    st.write("- **X opt** = concentration of the maximum predicted by the fitted regression curve within the tested X range. It may be flagged as a low-confidence estimate when p-value ≥ 0.05 or R² (raw) < 0.20.")
+                    st.write("- **Best observed concentration** = concentration corresponding to the highest observed group mean among the tested concentrations.")
                     st.write("- **R² (fit basis)** = goodness of fit computed on the same data used to estimate the model parameters.")
                     st.write("- **R² (means)** = how well the curve describes the trend of the concentration means.")
                     st.write("- **R² (raw)** = how well the same curve explains the dispersion of all individual replicates.")
@@ -680,7 +790,10 @@ with right_col:
                     st.markdown("**Interpretation help**")
                     st.write(
                         "Use ANOVA/post hoc to decide which tested concentration performs best statistically. "
-                        "Use the regression curve and x_opt as an interpolated estimate of the optimum between tested concentrations."
+                        "Use the regression curve and X opt as an interpolated estimate of the optimum between tested concentrations."
+                    )
+                    st.write(
+                        f"- **{xopt_headline}**: {xopt_detail}"
                     )
                     st.write(
                         "- A higher **R² (means)** than **R² (raw)** usually means the curve follows the average trend well, "
