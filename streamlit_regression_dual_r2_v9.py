@@ -159,6 +159,34 @@ def add_confined_peak_annotation(ax, x, y, text, font_size, color="orange"):
     return ann
 
 
+
+
+def add_notice_below_legend(ax, fig, legend, text, font_size, color="crimson"):
+    if legend is None:
+        x_axes, y_axes = 0.98, 0.78
+    else:
+        fig.canvas.draw()
+        renderer = fig.canvas.get_renderer()
+        bbox_disp = legend.get_window_extent(renderer=renderer)
+        bbox_axes = bbox_disp.transformed(ax.transAxes.inverted())
+        x_axes = min(0.98, bbox_axes.x1)
+        y_axes = max(0.08, bbox_axes.y0 - 0.03)
+
+    txt = ax.text(
+        x_axes,
+        y_axes,
+        text,
+        transform=ax.transAxes,
+        ha="right",
+        va="top",
+        fontsize=max(font_size, 9),
+        bbox=dict(boxstyle="round,pad=0.3", facecolor="white", edgecolor=color, alpha=0.92),
+        color=color,
+        zorder=7,
+    )
+    txt.set_clip_on(False)
+    return txt
+
 def needs_tick_rotation(labels, positions):
     if len(labels) <= 1:
         return False
@@ -319,29 +347,35 @@ def assess_internal_optimum(max_concentration, concentrations, p_value, r2_raw, 
     x_span = x_max - x_min
     tol = max(1e-9, 0.01 * x_span)
     boundary_optimum = abs(max_concentration - x_min) <= tol or abs(max_concentration - x_max) <= tol
-    weak_fit = (not np.isfinite(p_value)) or (not np.isfinite(r2_raw)) or p_value >= 0.05 or r2_raw < threshold
-    no_reliable_internal = boundary_optimum or weak_fit
 
-    if no_reliable_internal:
-        reasons = []
-        if boundary_optimum:
-            reasons.append("the fitted maximum falls at the edge of the tested concentration range rather than at an internal concentration")
-        if p_value >= 0.05 if np.isfinite(p_value) else True:
+    if boundary_optimum:
+        reasons = [
+            "the fitted maximum falls at the edge of the tested concentration range rather than at an internal concentration"
+        ]
+        if not np.isfinite(p_value) or p_value >= 0.05:
             reasons.append("the global model test is not statistically significant")
-        if r2_raw < threshold if np.isfinite(r2_raw) else True:
+        if not np.isfinite(r2_raw) or r2_raw < threshold:
             reasons.append("replicate variability is high relative to the fitted trend")
-        if not reasons:
-            reasons.append("the fitted trend does not support a stable internal optimum")
         reason_text = "; ".join(reasons)
         return (
             "No reliable internal optimum detected within tested range",
             f"No reliable internal optimum detected within the tested range because {reason_text}.",
             True,
+            True,
+        )
+
+    if (not np.isfinite(p_value)) or (not np.isfinite(r2_raw)) or p_value >= 0.05 or r2_raw < threshold:
+        return (
+            "Internal optimum detected, but with weak support",
+            "The fitted maximum lies within the tested range, but support is weak because the p-value and/or R² (raw) indicate that replicate variability is high relative to the fitted trend. Treat X opt as a low-confidence estimate.",
+            True,
+            False,
         )
 
     return (
         "Reliable internal optimum detected within tested range",
         "The fitted maximum lies within the tested range and the regression support is acceptable for interpreting an internal optimum.",
+        False,
         False,
     )
 
@@ -424,7 +458,18 @@ with left_col:
         show_regression_curve = st.checkbox(
             "Show regression curve",
             value=True,
-            help="Show or hide the fitted regression curve and its X opt markers on the graph.",
+            help="Show or hide the fitted regression curve on the graph.",
+        )
+        show_xopt_marker = st.checkbox(
+            "Show X opt",
+            value=True,
+            disabled=(not show_regression_curve),
+            help="Show or hide the estimated optimum (X opt) line, marker, and annotation.",
+        )
+        show_best_observed_marker = st.checkbox(
+            "Show best observed concentration",
+            value=False,
+            help="Show or hide the concentration corresponding to the highest observed group mean.",
         )
 
     with st.container(border=True):
@@ -656,7 +701,7 @@ with right_col:
                 fit_basis_label,
             )
             xopt_headline, xopt_detail, xopt_low_confidence = assess_xopt_confidence(p_value, r2_raw)
-            optimum_headline, optimum_detail, no_reliable_internal_optimum = assess_internal_optimum(
+            optimum_headline, optimum_detail, xopt_needs_caution, no_internal_optimum_box = assess_internal_optimum(
                 max_concentration,
                 concentrations,
                 p_value,
@@ -668,6 +713,7 @@ with right_col:
             if show_regression_curve:
                 ax.plot(x_plot_fit, y_fit, color=line_color, label=legend_label, linewidth=2, zorder=5)
 
+            if show_regression_curve and show_xopt_marker:
                 ax.axvline(
                     x=x_plot_max,
                     linestyle="--",
@@ -766,7 +812,16 @@ with right_col:
             rotation = 45 if needs_tick_rotation(xtick_labels, x_plot_means) else 0
             ha = "right" if rotation else "center"
             ax.set_xticklabels(xtick_labels, rotation=rotation, ha=ha)
-            ax.legend(loc="upper right", fontsize=font_size_legend, frameon=True)
+            legend = ax.legend(loc="upper right", fontsize=font_size_legend, frameon=True)
+            if show_regression_curve and no_internal_optimum_box:
+                add_notice_below_legend(
+                    ax,
+                    fig,
+                    legend,
+                    "No reliable internal optimum detected within tested range\nHigh variability among replicates relative to the fitted trend",
+                    font_size_stats_box,
+                    color="crimson",
+                )
             ax.grid(True, axis="both", alpha=0.35, zorder=1)
             fig.tight_layout()
 
@@ -800,6 +855,8 @@ with right_col:
                     st.write(f"**Fit basis:** {fit_basis_label} ({weighting_description})")
                     st.write(f"**Displayed error bars:** {display_error_type}")
                     st.write(f"**Show regression curve:** {'Yes' if show_regression_curve else 'No'}")
+                    st.write(f"**Show X opt:** {'Yes' if show_regression_curve and show_xopt_marker else 'No'}")
+                    st.write(f"**Show best observed concentration:** {'Yes' if show_best_observed_marker else 'No'}")
                     st.write(f"**Weights for mean fit:** {effective_weight_basis}")
                     st.write(f"**Equation:** {equation}")
                     st.write(f"**R² (fit basis):** {r2_fit_basis:.6f}")
@@ -846,6 +903,9 @@ with right_col:
                         f"- **{xopt_headline}**: {xopt_detail}"
                     )
                     st.write(
+                        f"- **{optimum_headline}**: {optimum_detail}"
+                    )
+                    st.write(
                         "- A higher **R² (means)** than **R² (raw)** usually means the curve follows the average trend well, "
                         "but individual replicate variability is still high."
                     )
@@ -860,4 +920,3 @@ with right_col:
             st.error(f"Error while loading or analyzing the file: {e}")
     else:
         st.info("Upload an Excel file to load the first sheet automatically and display the plot.")
-
