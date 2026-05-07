@@ -742,7 +742,7 @@ with right_col:
             y_margin_bottom = 0.08 * y_range if y_range > 0 else max(abs(y_lower), 1.0) * 0.08 + 0.5
             ax.set_ylim(y_lower - y_margin_bottom, y_upper + y_margin_top)
 
-            if show_regression_curve:
+            if show_regression_curve and show_xopt_marker:
                 add_confined_peak_annotation(
                     ax,
                     x_plot_max,
@@ -752,24 +752,24 @@ with right_col:
                     color="orange",
                 )
 
-                if show_best_observed_marker or no_internal_optimum_box:
-                    x_plot_best_obs = float(display_mapper(np.array([max_data_concentration], dtype=float))[0])
-                    ax.axvline(
-                        x=x_plot_best_obs,
-                        linestyle=":",
-                        color="green",
-                        label=f"{best_observed_prefix}: {max_data_concentration:.1f} {x_label}",
-                        zorder=4,
-                    )
-                    ax.scatter(x_plot_best_obs, max_data_height, color="green", zorder=6)
-                    add_confined_peak_annotation(
-                        ax,
-                        x_plot_best_obs,
-                        max_data_height,
-                        f"{best_observed_prefix}: {max_data_concentration:.1f} {x_label}",
-                        font_size_tick,
-                        color="green",
-                    )
+            if show_best_observed_marker or no_internal_optimum_box:
+                x_plot_best_obs = float(display_mapper(np.array([max_data_concentration], dtype=float))[0])
+                ax.axvline(
+                    x=x_plot_best_obs,
+                    linestyle=":",
+                    color="green",
+                    label=f"{best_observed_prefix}: {max_data_concentration:.1f} {x_label}",
+                    zorder=4,
+                )
+                ax.scatter(x_plot_best_obs, max_data_height, color="green", zorder=6)
+                add_confined_peak_annotation(
+                    ax,
+                    x_plot_best_obs,
+                    max_data_height,
+                    f"{best_observed_prefix}: {max_data_concentration:.1f} {x_label}",
+                    font_size_tick,
+                    color="green",
+                )
 
             stats_text = (
                 f"Fit basis: {fit_basis_label} ({weighting_description})\n"
@@ -844,7 +844,7 @@ with right_col:
                     st.write(f"**Displayed error bars:** {display_error_type}")
                     st.write(f"**Show regression curve:** {'Yes' if show_regression_curve else 'No'}")
                     st.write(f"**Show X opt:** {'Yes' if show_regression_curve and show_xopt_marker else 'No'}")
-                    st.write(f"**Show best observed concentration:** {'Yes' if show_best_observed_marker else 'No'}")
+                    st.write(f"**Show best observed concentration:** {'Yes' if (show_best_observed_marker or no_internal_optimum_box) else 'No'}")
                     st.write(f"**Weights for mean fit:** {effective_weight_basis}")
                     st.write(f"**Equation:** {equation}")
                     st.write(f"**R² (fit basis):** {r2_fit_basis:.6f}")
