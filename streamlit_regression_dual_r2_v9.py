@@ -394,6 +394,11 @@ with left_col:
             disabled=(fit_basis == "Raw replicates"),
             help="Automatically enabled when the fit is based on raw replicates.",
         )
+        show_regression_curve = st.checkbox(
+            "Show regression curve",
+            value=True,
+            help="Show or hide the fitted regression curve and its X opt markers on the graph.",
+        )
 
     with st.container(border=True):
         st.subheader("Text")
@@ -429,6 +434,7 @@ with right_col:
             "- When **Raw replicates** is selected, **Weights for mean fit** is disabled and **Show raw replicate points** is automatically enabled.\n"
             "- **Error bars shown on mean points** controls only the plotted bars/points.\n"
             "- **Weights for mean fit** controls only the weighting of the regression when fitting means.\n"
+            "- **Show regression curve** lets you hide the fitted curve and X opt markers while keeping the numerical results available below.\n"
             "- Recommended setup for many biological datasets: show **SD** on the graph to represent real variability, and use **SEM** as weights if you fit the group means.\n"
             "- Downloaded **PNG** files are exported with a transparent background.\n"
             "- X opt is automatically flagged as **low-confidence estimate** when p-value ≥ 0.05 or R² (raw) < 0.20.\n"
@@ -618,16 +624,17 @@ with right_col:
             xopt_legend_prefix = "X opt (low confidence est.)" if xopt_low_confidence else "X opt"
             best_observed_prefix = "Best observed concentration"
 
-            ax.plot(x_plot_fit, y_fit, color=line_color, label=legend_label, linewidth=2, zorder=5)
+            if show_regression_curve:
+                ax.plot(x_plot_fit, y_fit, color=line_color, label=legend_label, linewidth=2, zorder=5)
 
-            ax.axvline(
-                x=x_plot_max,
-                linestyle="--",
-                color="orange",
-                label=f"{xopt_legend_prefix}: {max_concentration:.1f} {x_label}",
-                zorder=4,
-            )
-            ax.scatter(x_plot_max, max_height, color="orange", zorder=6)
+                ax.axvline(
+                    x=x_plot_max,
+                    linestyle="--",
+                    color="orange",
+                    label=f"{xopt_legend_prefix}: {max_concentration:.1f} {x_label}",
+                    zorder=4,
+                )
+                ax.scatter(x_plot_max, max_height, color="orange", zorder=6)
 
             if x_display_mode == "Categorical (equal spacing, visual only)":
                 x_margin = 0.5
@@ -648,45 +655,46 @@ with right_col:
             y_margin_bottom = 0.08 * y_range if y_range > 0 else max(abs(y_lower), 1.0) * 0.08 + 0.5
             ax.set_ylim(y_lower - y_margin_bottom, y_upper + y_margin_top)
 
-            add_confined_peak_annotation(
-                ax,
-                x_plot_max,
-                max_height,
-                f"{xopt_legend_prefix}: {max_concentration:.1f} {x_label}",
-                font_size_tick,
-                color="orange",
-            )
-
-            if no_reliable_internal_optimum:
-                x_plot_best_obs = float(display_mapper(np.array([max_data_concentration], dtype=float))[0])
-                ax.axvline(
-                    x=x_plot_best_obs,
-                    linestyle=":",
-                    color="green",
-                    label=f"{best_observed_prefix}: {max_data_concentration:.1f} {x_label}",
-                    zorder=4,
-                )
-                ax.scatter(x_plot_best_obs, max_data_height, color="green", zorder=6)
+            if show_regression_curve:
                 add_confined_peak_annotation(
                     ax,
-                    x_plot_best_obs,
-                    max_data_height,
-                    f"{best_observed_prefix}: {max_data_concentration:.1f} {x_label}",
+                    x_plot_max,
+                    max_height,
+                    f"{xopt_legend_prefix}: {max_concentration:.1f} {x_label}",
                     font_size_tick,
-                    color="green",
+                    color="orange",
                 )
-                ax.text(
-                    0.5,
-                    0.90,
-                    "No reliable internal optimum detected within tested range\nHigh variability among replicates relative to the fitted trend",
-                    transform=ax.transAxes,
-                    ha="center",
-                    va="top",
-                    fontsize=max(font_size_stats_box, 9),
-                    bbox=dict(boxstyle="round,pad=0.3", facecolor="white", edgecolor="crimson", alpha=0.92),
-                    color="crimson",
-                    zorder=7,
-                )
+
+                if no_reliable_internal_optimum:
+                    x_plot_best_obs = float(display_mapper(np.array([max_data_concentration], dtype=float))[0])
+                    ax.axvline(
+                        x=x_plot_best_obs,
+                        linestyle=":",
+                        color="green",
+                        label=f"{best_observed_prefix}: {max_data_concentration:.1f} {x_label}",
+                        zorder=4,
+                    )
+                    ax.scatter(x_plot_best_obs, max_data_height, color="green", zorder=6)
+                    add_confined_peak_annotation(
+                        ax,
+                        x_plot_best_obs,
+                        max_data_height,
+                        f"{best_observed_prefix}: {max_data_concentration:.1f} {x_label}",
+                        font_size_tick,
+                        color="green",
+                    )
+                    ax.text(
+                        0.98,
+                        0.72,
+                        "No reliable internal optimum detected within tested range\nHigh variability among replicates relative to the fitted trend",
+                        transform=ax.transAxes,
+                        ha="right",
+                        va="top",
+                        fontsize=max(font_size_stats_box, 9),
+                        bbox=dict(boxstyle="round,pad=0.3", facecolor="white", edgecolor="crimson", alpha=0.92),
+                        color="crimson",
+                        zorder=7,
+                    )
 
             stats_text = (
                 f"Fit basis: {fit_basis_label} ({weighting_description})\n"
@@ -750,6 +758,7 @@ with right_col:
                     st.write(f"**X-axis display:** {x_display_mode}")
                     st.write(f"**Fit basis:** {fit_basis_label} ({weighting_description})")
                     st.write(f"**Displayed error bars:** {display_error_type}")
+                    st.write(f"**Show regression curve:** {'Yes' if show_regression_curve else 'No'}")
                     st.write(f"**Weights for mean fit:** {effective_weight_basis}")
                     st.write(f"**Equation:** {equation}")
                     st.write(f"**R² (fit basis):** {r2_fit_basis:.6f}")
@@ -810,3 +819,4 @@ with right_col:
             st.error(f"Error while loading or analyzing the file: {e}")
     else:
         st.info("Upload an Excel file to load the first sheet automatically and display the plot.")
+
