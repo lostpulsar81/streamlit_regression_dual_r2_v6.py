@@ -752,7 +752,7 @@ with right_col:
                     color="orange",
                 )
 
-                if no_reliable_internal_optimum:
+                if show_best_observed_marker or no_internal_optimum_box:
                     x_plot_best_obs = float(display_mapper(np.array([max_data_concentration], dtype=float))[0])
                     ax.axvline(
                         x=x_plot_best_obs,
@@ -769,18 +769,6 @@ with right_col:
                         f"{best_observed_prefix}: {max_data_concentration:.1f} {x_label}",
                         font_size_tick,
                         color="green",
-                    )
-                    ax.text(
-                        0.98,
-                        0.72,
-                        "No reliable internal optimum detected within tested range\nHigh variability among replicates relative to the fitted trend",
-                        transform=ax.transAxes,
-                        ha="right",
-                        va="top",
-                        fontsize=max(font_size_stats_box, 9),
-                        bbox=dict(boxstyle="round,pad=0.3", facecolor="white", edgecolor="crimson", alpha=0.92),
-                        color="crimson",
-                        zorder=7,
                     )
 
             stats_text = (
