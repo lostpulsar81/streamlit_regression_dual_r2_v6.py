@@ -197,6 +197,25 @@ def safe_output_stem(sheet_name):
     return f"{cleaned or 'sheet'}_regression"
 
 
+def format_concentration_label(value):
+    value = float(value)
+    if np.isclose(value, round(value)):
+        return str(int(round(value)))
+    return f"{value:g}"
+
+
+def get_omit_options(excel_file, sheet_name):
+    try:
+        header_df = pd.read_excel(excel_file, sheet_name=sheet_name, header=None, nrows=1)
+        if header_df.empty:
+            return []
+        concentrations = pd.to_numeric(header_df.iloc[0, :], errors="coerce")
+        concentrations = concentrations.dropna().to_numpy(dtype=float)
+        return [format_concentration_label(v) for v in concentrations]
+    except Exception:
+        return []
+
+
 def interpret_fit_quality(p_value, r2_fit_basis, fit_basis_label):
     if not np.isfinite(p_value) or not np.isfinite(r2_fit_basis):
         return (
@@ -329,6 +348,7 @@ def assess_internal_optimum(max_concentration, concentrations, p_value, r2_raw, 
 
 excel_file = None
 sheet_name = None
+omitted_concentration_labels = []
 
 left_col, right_col = st.columns([1, 2])
 
@@ -345,6 +365,13 @@ with left_col:
                     st.error("The uploaded Excel file does not contain any visible sheets.")
                     st.stop()
                 sheet_name = st.selectbox("Sheet name", available_sheets, index=0)
+                omit_options = get_omit_options(excel_file, sheet_name)
+                omitted_concentration_labels = st.multiselect(
+                    "Omit concentrations",
+                    options=omit_options,
+                    default=[],
+                    help="Exclude selected concentration levels from the regression, summary statistics, and graph.",
+                )
             except Exception as exc:
                 st.error(f"Unable to read the Excel file or its sheet names: {exc}")
                 st.stop()
@@ -431,6 +458,7 @@ with right_col:
             "- **Categorical (equal spacing, visual only)** spreads concentrations evenly for readability, but the fit itself is still calculated with the real numeric concentrations.\n"
             "- **Group means** fits the curve to one mean value per concentration.\n"
             "- **Raw replicates** fits the curve to all individual experimental values.\n"
+            "- **Omit concentrations** removes selected concentration levels from the graph, summary statistics, and regression before fitting.\n"
             "- When **Raw replicates** is selected, **Weights for mean fit** is disabled and **Show raw replicate points** is automatically enabled.\n"
             "- **Error bars shown on mean points** controls only the plotted bars/points.\n"
             "- **Weights for mean fit** controls only the weighting of the regression when fitting means.\n"
@@ -471,6 +499,19 @@ with right_col:
                 st.error("No replicate data found below the concentration row.")
                 st.stop()
 
+            if omitted_concentration_labels:
+                omitted_set = set(omitted_concentration_labels)
+                keep_mask = np.array(
+                    [format_concentration_label(v) not in omitted_set for v in concentrations],
+                    dtype=bool,
+                )
+                concentrations = concentrations[keep_mask]
+                data_df = data_df.loc[:, keep_mask]
+
+            if concentrations.size == 0 or data_df.shape[1] == 0:
+                st.error("All concentration levels were omitted. Keep at least two concentrations for analysis.")
+                st.stop()
+
             mean_heights = data_df.mean().to_numpy(dtype=float)
             std_heights = data_df.std(ddof=1).to_numpy(dtype=float)
             counts = data_df.count().to_numpy(dtype=float)
@@ -488,7 +529,7 @@ with right_col:
                 st.stop()
 
             if len(concentrations) < 2:
-                st.error("At least two concentration columns are required.")
+                st.error("At least two non-omitted concentration columns are required.")
                 st.stop()
 
             x_raw, y_raw = build_raw_vectors(concentrations, data_df)
