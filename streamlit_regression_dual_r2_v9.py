@@ -752,7 +752,7 @@ with right_col:
                     color="orange",
                 )
 
-            if show_best_observed_marker or no_internal_optimum_box:
+            if show_best_observed_marker:
                 x_plot_best_obs = float(display_mapper(np.array([max_data_concentration], dtype=float))[0])
                 ax.axvline(
                     x=x_plot_best_obs,
@@ -844,7 +844,7 @@ with right_col:
                     st.write(f"**Displayed error bars:** {display_error_type}")
                     st.write(f"**Show regression curve:** {'Yes' if show_regression_curve else 'No'}")
                     st.write(f"**Show X opt:** {'Yes' if show_regression_curve and show_xopt_marker else 'No'}")
-                    st.write(f"**Show best observed concentration:** {'Yes' if (show_best_observed_marker or no_internal_optimum_box) else 'No'}")
+                    st.write(f"**Show best observed concentration:** {'Yes' if show_best_observed_marker else 'No'}")
                     st.write(f"**Weights for mean fit:** {effective_weight_basis}")
                     st.write(f"**Equation:** {equation}")
                     st.write(f"**R² (fit basis):** {r2_fit_basis:.6f}")
